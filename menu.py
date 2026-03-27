@@ -1,9 +1,10 @@
 import requests
+import certifi
 import os
 from datetime import datetime
 from config import BASE_URL, USERNAME, PASSWORD
 
-UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "files_to_upload")
 DOWNLOADS_DIR = os.path.join(os.path.dirname(__file__), "downloads")
 
 os.makedirs(UPLOADS_DIR, exist_ok=True)
@@ -12,7 +13,7 @@ os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 def login():
     session = requests.Session()
-    session.verify = False
+    session.verify = certifi.where()
     session.auth = (USERNAME, PASSWORD)
     login_page = session.get(f"{BASE_URL}/admin/login/")
     csrf_token = session.cookies.get("csrftoken")
