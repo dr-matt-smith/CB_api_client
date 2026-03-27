@@ -12,6 +12,8 @@ os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 def login():
     session = requests.Session()
+    session.verify = False
+    session.auth = (USERNAME, PASSWORD)
     login_page = session.get(f"{BASE_URL}/admin/login/")
     csrf_token = session.cookies.get("csrftoken")
     response = session.post(f"{BASE_URL}/admin/login/", data={
@@ -28,7 +30,9 @@ def login():
 
 
 def get_files(session):
-    response = session.get(f"{BASE_URL}/api/files/")
+    url = f"{BASE_URL}/api/files/"
+    print(f"  GET {url}")
+    response = session.get(url)
     if response.status_code != 200:
         print(f"Failed to retrieve file list ({response.status_code})")
         return []
@@ -80,7 +84,9 @@ def download_file(session):
     selected = files[index]
     filename = os.path.basename(selected["file"])
 
-    response = session.get(f"{BASE_URL}/api/files/{selected['id']}/")
+    url = f"{BASE_URL}/api/files/{selected['id']}/"
+    print(f"  GET {url}")
+    response = session.get(url)
     if response.status_code == 200:
         timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
         dest_dir = os.path.join(DOWNLOADS_DIR, timestamp)
@@ -135,9 +141,11 @@ def upload_file(session):
         return
 
     filename = os.path.basename(file_path)
+    url = f"{BASE_URL}/api/upload/"
+    print(f"  POST {url}")
     with open(file_path, "rb") as f:
         response = session.post(
-            f"{BASE_URL}/api/upload/",
+            url,
             files={"file": (filename, f, "application/octet-stream")},
             headers={"X-CSRFToken": session.cookies.get("csrftoken")},
         )
