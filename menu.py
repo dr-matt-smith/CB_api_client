@@ -2,6 +2,7 @@ import requests
 import certifi
 import os
 from datetime import datetime
+from urllib.parse import quote
 from config import BASE_URL, USERNAME, PASSWORD
 
 UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "files_to_upload")
@@ -154,6 +155,11 @@ def upload_file(session):
     if response.status_code == 201:
         data = response.json()
         print(f"Uploaded: {filename} (ID: {data['id']}, {data['file_size']} bytes)")
+        stem = os.path.splitext(filename)[0]
+        published_url = f"{BASE_URL}/media/public/{stem}/"
+        qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={quote(published_url, safe='')}"
+        print(f"Published at: {published_url}")
+        print(f"QR code:      {qr_url}")
     else:
         print(f"Upload failed ({response.status_code}): {response.text}")
 

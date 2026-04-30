@@ -13,3 +13,12 @@ To zip the *contents* of the folder (no wrapping folder inside the archive), cd 
 - `.` means "everything in the current dir" — entries are stored as `file.txt`, `sub/file.txt`, with no `son-of-fungus/` prefix.
 - `../son-of-fungus.zip` writes the archive one level up, outside the folder being zipped.
 - `-x ".*" "*/.*"` skips dotfiles like `.DS_Store`, keeping `__MACOSX` out.
+
+==
+
+see PDF in folder _mac_clean_zip
+
+
+=
+
+(cd food_sounds && zip -r ../food_sounds.zi![img.png](img.png)p . -x ".*" "*/.*")

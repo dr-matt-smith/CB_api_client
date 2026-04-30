@@ -2,6 +2,7 @@ import requests
 import certifi
 import os
 import sys
+from urllib.parse import quote
 from config import BASE_URL, USERNAME, PASSWORD
 
 
@@ -49,6 +50,11 @@ if __name__ == "__main__":
     if response.status_code == 201:
         data = response.json()
         print(f"Success: '{filename}' uploaded (ID: {data['id']}, {data['file_size']} bytes)")
+        stem = os.path.splitext(filename)[0]
+        published_url = f"{BASE_URL}/media/public/{stem}/"
+        qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={quote(published_url, safe='')}"
+        print(f"Published at: {published_url}")
+        print(f"QR code:      {qr_url}")
     else:
         print(f"Failed to upload '{filename}' ({response.status_code}): {response.text}")
         sys.exit(1)
