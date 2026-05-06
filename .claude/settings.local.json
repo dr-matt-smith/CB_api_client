@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(curl *)",
+      "Bash(.venv/bin/python *)",
+      "Bash(rm -f /tmp/cookies.txt)",
+      "Read(//tmp/**)",
+      "Bash(env)",
+      "Bash(rm -f /tmp/c.txt)",
+      "Bash(awk '/csrftoken/{print $7}' /tmp/c.txt)",
+      "Bash(git restore *)"
     ]
   }
 }
