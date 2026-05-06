@@ -10,7 +10,12 @@
       "Bash(env)",
       "Bash(rm -f /tmp/c.txt)",
       "Bash(awk '/csrftoken/{print $7}' /tmp/c.txt)",
-      "Bash(git restore *)"
+      "Bash(git restore *)",
+      "Bash(gh api *)",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(item['name'], item['type']\\) for item in data]\")",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(item['name'], item['type'], item.get\\('size',''\\), item.get\\('path',''\\)\\) for item in data]\")",
+      "Bash(python3 *)",
+      "Bash(gh repo *)"
     ]
   }
 }
