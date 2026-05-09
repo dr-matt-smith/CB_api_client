@@ -52,3 +52,26 @@ the Django API, replacing the upload-only script from v1.
   - tombstoned download attempts surface the `410 Gone` response cleanly
   - every request prints the HTTP method + URL before firing, so the user can see exactly which endpoint is being called
 
+
+Version 3 features
+==================
+Reorganises the client into an API-shaped hierarchy and adds support for the
+new version-scoped history endpoint.
+
+- [x] hierarchical menu mirroring the API resource layout
+  - top-level sections: Packages / Versions / Aliases / History / Download latest
+  - each sub-menu line annotates the HTTP verb + URL pattern it calls, so the user sees exactly which endpoint maps to each option
+  - "Download latest" is kept as a direct top-level shortcut rather than a single-item sub-menu
+
+- [x] new endpoint: history as-of a specific version (`GET /api/packages/<name>/versions/<n>/history/`)
+  - rendered chronology up to version `n` (versions > n are absent), including the hash for version `n`
+  - tombstoned `n` returns 200 with a `(tombstoned)` marker and no hash line
+  - unknown `n` returns 404, surfaced cleanly to the user
+
+- [x] menu structure
+  - **Packages**: list all / show metadata / register empty / cascade-delete
+  - **Versions**: list / detail / publish (upload) / download specific / tombstone
+  - **Aliases**: list / set or move / remove
+  - **History**: full chronology / as-of-version (new)
+  - **Convenience**: download latest version
+

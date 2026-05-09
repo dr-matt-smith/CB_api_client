@@ -142,6 +142,28 @@ def show_package_history(session):
     print(response.text)
 
 
+def show_version_history(session):
+    name = pick_package(session)
+    if not name:
+        return
+    version_input = input("Enter version number (history as-of): ").strip()
+    if not version_input:
+        return
+    try:
+        version = int(version_input)
+    except ValueError:
+        print("Invalid version.")
+        return
+    url = f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/{version}/history/"
+    print(f"  GET {url}")
+    response = session.get(url)
+    if response.status_code != 200:
+        print(f"Failed ({response.status_code}): {response.text}")
+        return
+    print()
+    print(response.text)
+
+
 def list_package_versions(session):
     name = pick_package(session)
     if not name:
@@ -490,9 +512,9 @@ def delete_alias(session):
 def aliases_menu(session):
     while True:
         print("\n--- Aliases ---")
-        print("  1 - List aliases for a package")
-        print("  2 - Set / move an alias to a version")
-        print("  3 - Remove an alias")
+        print("  1 - List aliases for a package     (GET    /api/packages/{name}/aliases)")
+        print("  2 - Set / move alias to a version  (PUT    /api/packages/{name}/aliases/{alias})")
+        print("  3 - Remove an alias                (DELETE /api/packages/{name}/aliases/{alias})")
         print("  0 - Back")
         choice = input("\nSelect option: ").strip()
 
@@ -566,50 +588,98 @@ def tombstone_version(session):
         print(f"Tombstone failed ({response.status_code}): {response.text}")
 
 
-def main():
-    session = login()
-
+def packages_menu(session):
     while True:
-        print("\n--- Packages API (v4) ---")
-        print("  1 - List packages")
-        print("  2 - Show package detail (versions)")
-        print("  3 - Show package history")
-        print("  4 - List versions for a package")
-        print("  5 - Show single version detail")
-        print("  6 - Download a specific version")
-        print("  7 - Download the latest version")
-        print("  8 - Upload a package")
-        print("  9 - Tombstone a version")
-        print(" 10 - Register a new (empty) package")
-        print(" 11 - Manage aliases (list / set / remove)")
-        print(" 12 - Delete entire package (cascade tombstone)")
-        print("  0 - Exit")
+        print("\n--- Packages ---")
+        print("  1 - List all packages              (GET    /api/packages)")
+        print("  2 - Show package metadata          (GET    /api/packages/{name})")
+        print("  3 - Register a new (empty) package (POST   /api/packages)")
+        print("  4 - Delete entire package          (DELETE /api/packages/{name})")
+        print("  0 - Back")
         choice = input("\nSelect option: ").strip()
-
         if choice == "1":
             list_packages(session)
         elif choice == "2":
             show_package_detail(session)
         elif choice == "3":
-            show_package_history(session)
-        elif choice == "4":
-            list_package_versions(session)
-        elif choice == "5":
-            show_version_detail(session)
-        elif choice == "6":
-            download_package_version(session)
-        elif choice == "7":
-            download_package_latest(session)
-        elif choice == "8":
-            upload_package(session)
-        elif choice == "9":
-            tombstone_version(session)
-        elif choice == "10":
             register_package(session)
-        elif choice == "11":
-            aliases_menu(session)
-        elif choice == "12":
+        elif choice == "4":
             delete_package(session)
+        elif choice == "0":
+            return
+        else:
+            print("Invalid option, please try again.")
+
+
+def versions_menu(session):
+    while True:
+        print("\n--- Versions ---")
+        print("  1 - List versions of a package     (GET    /api/packages/{name}/versions)")
+        print("  2 - Show single version detail     (GET    /api/packages/{name}/versions/{n})")
+        print("  3 - Upload (publish) a new version (POST   /api/packages/{name}/versions)")
+        print("  4 - Download a specific version    (GET    /api/packages/{name}/versions/{n}/download)")
+        print("  5 - Tombstone a version            (DELETE /api/packages/{name}/versions/{n})")
+        print("  0 - Back")
+        choice = input("\nSelect option: ").strip()
+        if choice == "1":
+            list_package_versions(session)
+        elif choice == "2":
+            show_version_detail(session)
+        elif choice == "3":
+            upload_package(session)
+        elif choice == "4":
+            download_package_version(session)
+        elif choice == "5":
+            tombstone_version(session)
+        elif choice == "0":
+            return
+        else:
+            print("Invalid option, please try again.")
+
+
+def history_menu(session):
+    while True:
+        print("\n--- History ---")
+        print("  1 - Show full package history      (GET /api/packages/{name}/history)")
+        print("  2 - Show history as-of a version   (GET /api/packages/{name}/versions/{n}/history)")
+        print("  0 - Back")
+        choice = input("\nSelect option: ").strip()
+        if choice == "1":
+            show_package_history(session)
+        elif choice == "2":
+            show_version_history(session)
+        elif choice == "0":
+            return
+        else:
+            print("Invalid option, please try again.")
+
+
+def main():
+    session = login()
+
+    while True:
+        print("\n=== Packages API ===")
+        print("  1 - Packages    (list / show / register / delete)")
+        print("  2 - Versions    (list / detail / upload / download / tombstone)")
+        print("  3 - Aliases     (list / set / remove)")
+        print("  4 - History     (full / as-of-version)")
+        print("  5 - Download latest version        (GET  /api/packages/{name}/latest)")
+        print("  6 - Upload a package               (POST /api/packages/{name}/versions)")
+        print("  0 - Exit")
+        choice = input("\nSelect option: ").strip()
+
+        if choice == "1":
+            packages_menu(session)
+        elif choice == "2":
+            versions_menu(session)
+        elif choice == "3":
+            aliases_menu(session)
+        elif choice == "4":
+            history_menu(session)
+        elif choice == "5":
+            download_package_latest(session)
+        elif choice == "6":
+            upload_package(session)
         elif choice == "0":
             print("Goodbye.")
             break
