@@ -142,6 +142,77 @@ def show_package_history(session):
     print(response.text)
 
 
+def list_package_versions(session):
+    name = pick_package(session)
+    if not name:
+        return
+    url = f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/"
+    print(f"  GET {url}")
+    response = session.get(url)
+    if response.status_code != 200:
+        print(f"Failed ({response.status_code}): {response.text}")
+        return
+    try:
+        versions = response.json()
+    except ValueError:
+        print(response.text)
+        return
+    if not versions:
+        print("(no versions)")
+        return
+    print(f"\n{'Ver':>4}  {'Author':<20} {'Uploaded':<22} {'Tomb':<5} Summary")
+    print("-" * 90)
+    for v in versions:
+        ver = v.get("version", "?")
+        author = v.get("author", "")
+        uploaded = (v.get("date") or v.get("uploaded_at") or "")[:19].replace("T", " ")
+        tomb = "yes" if v.get("tombstoned") else ""
+        summary = (v.get("summary") or "").replace("\n", " ")
+        if len(summary) > 40:
+            summary = summary[:37] + "..."
+        print(f"{str(ver):>4}  {author:<20} {uploaded:<22} {tomb:<5} {summary}")
+    print()
+
+
+def show_version_detail(session):
+    name = pick_package(session)
+    if not name:
+        return
+    version_input = input("Enter version number: ").strip()
+    if not version_input:
+        return
+    try:
+        version = int(version_input)
+    except ValueError:
+        print("Invalid version.")
+        return
+
+    url = f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/{version}/"
+    print(f"  GET {url}")
+    response = session.get(url)
+    if response.status_code != 200:
+        print(f"Failed ({response.status_code}): {response.text}")
+        return
+    try:
+        v = response.json()
+    except ValueError:
+        print(response.text)
+        return
+
+    print()
+    print(f"Package:    {name}")
+    print(f"Version:    {v.get('version', '?')}")
+    print(f"Author:     {v.get('author', '')}")
+    uploaded = (v.get("date") or v.get("uploaded_at") or "")[:19].replace("T", " ")
+    print(f"Uploaded:   {uploaded}")
+    print(f"Tombstoned: {'yes' if v.get('tombstoned') else 'no'}")
+    if v.get("summary"):
+        print(f"Summary:    {v['summary']}")
+    if v.get("description"):
+        print(f"Description:\n{v['description']}")
+    print()
+
+
 def download_package_version(session):
     name = pick_package(session)
     if not name:
@@ -503,13 +574,15 @@ def main():
         print("  1 - List packages")
         print("  2 - Show package detail (versions)")
         print("  3 - Show package history")
-        print("  4 - Download a specific version")
-        print("  5 - Download the latest version")
-        print("  6 - Upload a package")
-        print("  7 - Tombstone a version")
-        print("  8 - Register a new (empty) package")
-        print("  9 - Manage aliases (list / set / remove)")
-        print(" 10 - Delete entire package (cascade tombstone)")
+        print("  4 - List versions for a package")
+        print("  5 - Show single version detail")
+        print("  6 - Download a specific version")
+        print("  7 - Download the latest version")
+        print("  8 - Upload a package")
+        print("  9 - Tombstone a version")
+        print(" 10 - Register a new (empty) package")
+        print(" 11 - Manage aliases (list / set / remove)")
+        print(" 12 - Delete entire package (cascade tombstone)")
         print("  0 - Exit")
         choice = input("\nSelect option: ").strip()
 
@@ -520,18 +593,22 @@ def main():
         elif choice == "3":
             show_package_history(session)
         elif choice == "4":
-            download_package_version(session)
+            list_package_versions(session)
         elif choice == "5":
-            download_package_latest(session)
+            show_version_detail(session)
         elif choice == "6":
-            upload_package(session)
+            download_package_version(session)
         elif choice == "7":
-            tombstone_version(session)
+            download_package_latest(session)
         elif choice == "8":
-            register_package(session)
+            upload_package(session)
         elif choice == "9":
-            aliases_menu(session)
+            tombstone_version(session)
         elif choice == "10":
+            register_package(session)
+        elif choice == "11":
+            aliases_menu(session)
+        elif choice == "12":
             delete_package(session)
         elif choice == "0":
             print("Goodbye.")
