@@ -18,6 +18,6 @@ To zip the *contents* of the folder (no wrapping folder inside the archive), cd 
 
 see PDF in folder _mac_clean_zip
 
-(cd fred-chess-v1 && zip -r ../fred-chess-v1.zip . -x ".*" "*/.*")
+(cd space-chess && zip -r ../space-chess.zip . -x ".*" "*/.*")
 
 (cd chess-fury-matt-1 && zip -r ../chess-fury-matt-1.zip . -x ".*" "*/.*")
