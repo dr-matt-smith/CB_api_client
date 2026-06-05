@@ -110,3 +110,37 @@ isolation) server. See `version 2 design document.md` and
 - [x] **tests updated** — fixtures use the API key (no login/CSRF), `type`/`public_url`
   assertions dropped, new `test_publish.py` covering the publish lifecycle, 422, and 404
 
+
+Client Version 4 (targets server API v8)
+=========================================
+Update to talk to the **v8** server, whose headline change is that **pages are
+fully decoupled from packages**. The package half of the API is unchanged, so
+this is a **pages-only** update. See `version 4 design document.md` and
+`version 4 implementation plan.md` for the full spec.
+
+> The client jumps **v2 → v4** (no v3 release) so the previous client stays
+> clearly labelled v2; the `version 2 …` docs keep their names.
+
+- [x] **pages are now standalone uploads** (no longer a package's `public/` folder)
+  - a page is its own ZIP whose root is the served site, plus a `pages.toml`
+    manifest with `[publish].path` (e.g. `dev/chess24`)
+  - served at `/pages/<org-slug>/<path>/`; re-uploading a path replaces it
+  - package upload / tombstone / delete **never** affects a page
+
+- [x] **publish API replaced** — `/api/publish/<name>` → `/api/pages`
+  - publish (`POST /api/pages`, multipart page ZIP), list (`GET /api/pages`),
+    detail (`GET /api/pages/<path>`), unpublish (`DELETE /api/pages/<path>`)
+  - the old `/api/publish/<name>/history` endpoint is gone (no v8 equivalent)
+
+- [x] **new Pages submenu** — publish (upload ZIP) / list / detail / unpublish
+  - pages selected by **path** (multi-segment; URLs use `quote(path, safe='/')`)
+  - handles `201`, `409` (path overlap), `422` (bad/no `pages.toml`), `404`
+  - `_choose_upload_file()` factored out of the package upload flow and reused
+
+- [x] **tests updated** — `make_page_zip` helper, `published_page`/`page_path`
+  fixtures, new `test_pages.py` (lifecycle, served page, 422/404/409, and a
+  pages-independent-of-packages decoupling test); old `test_publish.py` removed
+
+- [x] **unchanged** — API-key auth (`api.py`, `config.py`) and the package upload
+  path (`package_upload.py`) carry over from v2 untouched
+
