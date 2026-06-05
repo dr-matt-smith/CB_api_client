@@ -14,7 +14,7 @@ if PROJECT_ROOT not in sys.path:
 from config import BASE_URL  # noqa: E402
 from api import make_session  # noqa: E402
 
-from .helpers import make_zip  # noqa: E402
+from .helpers import make_zip, make_page_zip  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -62,29 +62,31 @@ def published_package(session, fresh_package_name):
 
 
 @pytest.fixture
-def published_page_package(session, fresh_package_name):
-    """A package whose v1 contains a public/ folder (publishable). Cleaned up on teardown."""
-    name = fresh_package_name
+def page_path():
+    """Unique unused page publish path. Caller owns publish/cleanup."""
+    return f"pytest-pages/{uuid.uuid4().hex[:12]}"
+
+
+@pytest.fixture
+def published_page(session, page_path):
+    """A live page published from its own ZIP (v8 /api/pages). Unpublished on teardown."""
+    path = page_path
     r = session.post(
-        f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/",
+        f"{BASE_URL}/api/pages",
         files={
-            "file": (f"{name}.zip", make_zip(name, "v1", with_public=True), "application/zip")
+            "file": (
+                f"{path.replace('/', '_')}.zip",
+                make_page_zip(path, marker=path),
+                "application/zip",
+            )
         },
-        data={"summary": "page fixture v1"},
     )
-    assert r.status_code in (200, 201), f"fixture publish failed: {r.status_code} {r.text}"
+    assert r.status_code in (200, 201), f"fixture page publish failed: {r.status_code} {r.text}"
 
-    yield name
+    yield path
 
-    # Best-effort: unpublish (ignore if not published) then cascade-delete.
+    # Teardown: unpublish (best-effort; fine if a test already removed it).
     try:
-        session.delete(f"{BASE_URL}/api/publish/{quote(name, safe='')}")
-    except requests.exceptions.RequestException:
-        pass
-    try:
-        session.delete(
-            f"{BASE_URL}/api/packages/{quote(name, safe='')}/",
-            json={"reason": "test teardown"},
-        )
+        session.delete(f"{BASE_URL}/api/pages/{quote(path, safe='/')}")
     except requests.exceptions.RequestException:
         pass

@@ -332,7 +332,8 @@ def _extract_package_name(toml_text):
     return match.group(1) if match else None
 
 
-def upload_package(session):
+def _choose_upload_file():
+    """Pick a ZIP from files_to_upload/ or type a path. Returns a path or None."""
     print("\nUpload options:")
     print("  1 - Choose a file from the files_to_upload/ folder")
     print("  2 - Enter a file path manually")
@@ -343,33 +344,40 @@ def upload_package(session):
                         if os.path.isfile(os.path.join(UPLOADS_DIR, f))]
         if not files_in_dir:
             print(f"No files found in {UPLOADS_DIR}")
-            return
+            return None
         print()
         for i, fname in enumerate(files_in_dir, 1):
             print(f"  {i}. {fname}")
         print()
         pick = input("Enter number to upload (or press Enter to cancel): ").strip()
         if not pick:
-            return
+            return None
         try:
             index = int(pick) - 1
             if index < 0 or index >= len(files_in_dir):
                 print("Invalid selection.")
-                return
+                return None
         except ValueError:
             print("Invalid input.")
-            return
+            return None
         file_path = os.path.join(UPLOADS_DIR, files_in_dir[index])
     elif choice == "2":
         file_path = input("Enter full path to file: ").strip()
         if not file_path:
-            return
+            return None
     else:
         print("Invalid option.")
-        return
+        return None
 
     if not os.path.isfile(file_path):
         print(f"File not found: {file_path}")
+        return None
+    return file_path
+
+
+def upload_package(session):
+    file_path = _choose_upload_file()
+    if not file_path:
         return
 
     toml_text, err = _read_package_toml(file_path)
@@ -531,58 +539,136 @@ def aliases_menu(session):
             print("Invalid option, please try again.")
 
 
-def publish_page(session):
-    name = pick_package(session)
-    if not name:
+def _read_pages_toml(zip_path):
+    """Return (publish_path, error_message). On success error_message is None.
+
+    Reads the ``[publish] path`` value from the top-level ``pages.toml`` in the
+    ZIP. The server validates this too, but reading it client-side gives a clear
+    up-front error and lets us show the path that will be published.
+    """
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            toml_name = next(
+                (n for n in zf.namelist()
+                 if n.lower() == "pages.toml" or n.lower().endswith("/pages.toml")),
+                None,
+            )
+            if not toml_name:
+                return None, "Invalid page bundle: ZIP does not contain a 'pages.toml' file."
+            text = zf.read(toml_name).decode("utf-8", errors="replace")
+    except zipfile.BadZipFile:
+        return None, f"Not a valid ZIP file: {zip_path}"
+
+    match = re.search(r"^\s*path\s*=\s*['\"]([^'\"]+)['\"]", text, re.MULTILINE)
+    if not match:
+        return None, "pages.toml is missing the [publish] path value."
+    return match.group(1), None
+
+
+def get_pages(session):
+    url = f"{BASE_URL}/api/pages"
+    print(f"  GET {url}")
+    response = session.get(url)
+    if response.status_code != 200:
+        print(f"Failed to retrieve page list ({response.status_code}): {response.text}")
+        return []
+    try:
+        return response.json()
+    except ValueError:
+        print("Server returned non-JSON response.")
+        return []
+
+
+def list_pages(session):
+    pages = get_pages(session)
+    if not pages:
+        print("No pages published.")
         return
-    url = f"{BASE_URL}/api/publish/{quote(name, safe='')}"
+    print(f"\n{'Path':<30} {'Published by':<16} {'Published at':<22} URL")
+    print("-" * 100)
+    for p in pages:
+        path = p.get("path", "?")
+        by = p.get("published_by") or ""
+        when = (p.get("published_at") or "")[:19].replace("T", " ")
+        url = p.get("url") or ""
+        full = url if (not url or url.startswith("http")) else f"{BASE_URL}{url}"
+        print(f"{path:<30} {by:<16} {when:<22} {full}")
+    print()
+
+
+def pick_page(session):
+    pages = get_pages(session)
+    if not pages:
+        print("No pages published.")
+        return None
+    print()
+    for i, p in enumerate(pages, 1):
+        print(f"  {i}. {p.get('path', '?')}")
+    print()
+    pick = input("Enter number (or press Enter to cancel): ").strip()
+    if not pick:
+        return None
+    try:
+        index = int(pick) - 1
+        if index < 0 or index >= len(pages):
+            print("Invalid selection.")
+            return None
+    except ValueError:
+        print("Invalid input.")
+        return None
+    return pages[index].get("path")
+
+
+def publish_page(session):
+    file_path = _choose_upload_file()
+    if not file_path:
+        return
+
+    publish_path, err = _read_pages_toml(file_path)
+    if err:
+        print(err)
+        return
+    print(f"This bundle publishes to path: {publish_path}")
+
+    filename = os.path.basename(file_path)
+    url = f"{BASE_URL}/api/pages"
     print(f"  POST {url}")
-    response = session.post(url)
-    if response.status_code == 200:
+    with open(file_path, "rb") as f:
+        response = session.post(
+            url,
+            files={"file": (filename, f, "application/zip")},
+        )
+
+    if response.status_code in (200, 201):
         try:
             data = response.json()
         except ValueError:
             print(response.text)
             return
-        print(f"Published: {data.get('package', name)} v{data.get('version', '?')}")
+        print(f"Published page: {data.get('path', publish_path)}")
         page = data.get("url")
         if page:
             full = page if page.startswith("http") else f"{BASE_URL}{page}"
             print(f"  Page: {full}")
+        if data.get("content_hash"):
+            print(f"  Hash: {data['content_hash']}")
+    elif response.status_code == 409:
+        print(f"Path conflict — overlaps an existing page: {response.text}")
     elif response.status_code == 422:
-        print("Cannot publish: the latest version has no 'public/' folder.")
+        print(f"Invalid page bundle: {response.text}")
     else:
         print(f"Publish failed ({response.status_code}): {response.text}")
 
 
-def unpublish_page(session):
-    name = pick_package(session)
-    if not name:
+def show_page_detail(session):
+    path = pick_page(session)
+    if not path:
         return
-    confirm = input(
-        f"Unpublish '{name}'? This removes the served page files. (y/N): "
-    ).strip().lower()
-    if confirm != "y":
-        print("Cancelled.")
-        return
-    url = f"{BASE_URL}/api/publish/{quote(name, safe='')}"
-    print(f"  DELETE {url}")
-    response = session.delete(url)
-    if response.status_code in (200, 204):
-        print(f"Unpublished: {name}")
-    else:
-        print(f"Unpublish failed ({response.status_code}): {response.text}")
-
-
-def publish_status(session):
-    name = pick_package(session)
-    if not name:
-        return
-    url = f"{BASE_URL}/api/publish/{quote(name, safe='')}"
+    url = f"{BASE_URL}/api/pages/{quote(path, safe='/')}"
     print(f"  GET {url}")
     response = session.get(url)
     if response.status_code == 404:
-        print(f"'{name}' is not currently published.")
+        print(f"'{path}' is not currently published.")
         return
     if response.status_code != 200:
         print(f"Failed ({response.status_code}): {response.text}")
@@ -593,65 +679,56 @@ def publish_status(session):
         print(response.text)
         return
     published = (data.get("published_at") or "")[:19].replace("T", " ")
-    print(f"\nPackage:       {data.get('package', name)}")
-    print(f"Published ver: {data.get('version', '?')}")
-    print(f"Published at:  {published}")
+    print(f"\nPath:         {data.get('path', path)}")
+    print(f"Published by: {data.get('published_by', '')}")
+    print(f"Published at: {published}")
     page = data.get("url")
     if page:
         full = page if page.startswith("http") else f"{BASE_URL}{page}"
-        print(f"URL:           {full}")
+        print(f"URL:          {full}")
+    if data.get("content_hash"):
+        print(f"Hash:         {data['content_hash']}")
     print()
 
 
-def publish_history(session):
-    name = pick_package(session)
-    if not name:
+def unpublish_page(session):
+    path = pick_page(session)
+    if not path:
         return
-    url = f"{BASE_URL}/api/publish/{quote(name, safe='')}/history"
-    print(f"  GET {url}")
-    response = session.get(url)
-    if response.status_code != 200:
-        print(f"Failed ({response.status_code}): {response.text}")
+    confirm = input(
+        f"Unpublish '{path}'? This removes the served page files. (y/N): "
+    ).strip().lower()
+    if confirm != "y":
+        print("Cancelled.")
         return
-    try:
-        events = response.json()
-    except ValueError:
-        print(response.text)
-        return
-    if not events:
-        print("(no publication history)")
-        return
-    print(f"\n{'Action':<10} {'Ver':>4}  {'When':<22} {'Principal':<16} Reason")
-    print("-" * 90)
-    for e in events:
-        when = (e.get("at") or "")[:19].replace("T", " ")
-        reason = (e.get("reason") or "").replace("\n", " ")
-        print(
-            f"{e.get('action', '?'):<10} {str(e.get('version', '')):>4}  "
-            f"{when:<22} {str(e.get('principal', '')):<16} {reason}"
-        )
-    print()
+    url = f"{BASE_URL}/api/pages/{quote(path, safe='/')}"
+    print(f"  DELETE {url}")
+    response = session.delete(url)
+    if response.status_code in (200, 204):
+        print(f"Unpublished: {path}")
+    else:
+        print(f"Unpublish failed ({response.status_code}): {response.text}")
 
 
 def pages_menu(session):
     while True:
-        print("\n--- Pages / Publish ---")
-        print("  (publish serves the LATEST version's public/ folder to /pages/<org>/<name>/;")
-        print("   tombstoning the published version auto-unpublishes it)")
-        print("  1 - Publish latest version         (POST   /api/publish/{name})")
-        print("  2 - Unpublish a package            (DELETE /api/publish/{name})")
-        print("  3 - Show current publication       (GET    /api/publish/{name})")
-        print("  4 - Show publication history       (GET    /api/publish/{name}/history)")
+        print("\n--- Pages ---")
+        print("  (pages are independent of packages: each page is its own ZIP upload")
+        print("   containing a pages.toml with [publish].path; served at /pages/<org>/<path>/)")
+        print("  1 - Publish a page (upload ZIP)    (POST   /api/pages)")
+        print("  2 - List published pages          (GET    /api/pages)")
+        print("  3 - Show page detail              (GET    /api/pages/{path})")
+        print("  4 - Unpublish a page              (DELETE /api/pages/{path})")
         print("  0 - Back")
         choice = input("\nSelect option: ").strip()
         if choice == "1":
             publish_page(session)
         elif choice == "2":
-            unpublish_page(session)
+            list_pages(session)
         elif choice == "3":
-            publish_status(session)
+            show_page_detail(session)
         elif choice == "4":
-            publish_history(session)
+            unpublish_page(session)
         elif choice == "0":
             return
         else:
@@ -785,7 +862,7 @@ def main():
         print("  2 - Versions    (list / detail / upload / download / tombstone)")
         print("  3 - Aliases     (list / set / remove)")
         print("  4 - History     (full / as-of-version)")
-        print("  5 - Pages       (publish / unpublish / status / history)")
+        print("  5 - Pages       (publish / list / detail / unpublish)")
         print("  6 - Download latest version        (GET  /api/packages/{name}/latest)")
         print("  7 - Upload a package               (POST /api/packages/{name}/versions)")
         print("  0 - Exit")

@@ -3,8 +3,10 @@
 Client to connect to Celbridge-hub API for ZIPed package upload and download
 - (see **celbridge-hub** package API server: https://github.com/celbridge-org/celbridge-hub)
 
-> **v2 client** — targets the **v7** server (per-organisation isolation).
+> **v4 client** — targets the **v8** server (pages decoupled from packages).
 > Authentication is via an **API key**; the old admin-login/password flow is gone.
+> Pages are now published as their own ZIP uploads, independent of packages
+> (see `TDDS/version 4 design document.md`).
 
 ## setup - create `.env`
 
@@ -41,7 +43,7 @@ To upload, use the menu's **Upload** option or `package_upload.py`.
       2 - Versions    (list / detail / upload / download / tombstone)
       3 - Aliases     (list / set / remove)
       4 - History     (full / as-of-version)
-      5 - Pages       (publish / unpublish / status / history)
+      5 - Pages       (publish / list / detail / unpublish)
       6 - Download latest version        (GET  /api/packages/{name}/latest)
       7 - Upload a package               (POST /api/packages/{name}/versions)
       0 - Exit
@@ -89,25 +91,36 @@ To upload, use the menu's **Upload** option or `package_upload.py`.
 
 ### example: publishing a web page
 
-Publishing serves the **latest** version's `public/` subfolder to
-`/pages/<org-slug>/<name>/`. (Tombstoning the published version auto-unpublishes it.)
+In **v8** pages are independent of packages. A page is its own ZIP upload whose
+root is the served site, plus a `pages.toml` manifest naming the publish path:
+
+```toml
+[publish]
+path = "dev/chess24"
+```
+
+The bundle is served at `/pages/<org-slug>/<path>/` (public, unauthenticated).
+Re-uploading the same path replaces it; uploading, tombstoning, or deleting a
+**package** never affects a page.
 
 ```bash
     Select option: 5
 
-    --- Pages / Publish ---
-      (publish serves the LATEST version's public/ folder to /pages/<org>/<name>/;
-       tombstoning the published version auto-unpublishes it)
-      1 - Publish latest version         (POST   /api/publish/{name})
-      2 - Unpublish a package            (DELETE /api/publish/{name})
-      3 - Show current publication       (GET    /api/publish/{name})
-      4 - Show publication history       (GET    /api/publish/{name}/history)
+    --- Pages ---
+      (pages are independent of packages: each page is its own ZIP upload
+       containing a pages.toml with [publish].path; served at /pages/<org>/<path>/)
+      1 - Publish a page (upload ZIP)    (POST   /api/pages)
+      2 - List published pages          (GET    /api/pages)
+      3 - Show page detail              (GET    /api/pages/{path})
+      4 - Unpublish a page              (DELETE /api/pages/{path})
       0 - Back
 
     Select option: 1
-      POST https://yourusername.pythonanywhere.com/api/publish/mysite
-    Published: mysite v2
-      Page: https://yourusername.pythonanywhere.com/pages/acme/mysite/
+    ...
+    This bundle publishes to path: dev/chess24
+      POST https://yourusername.pythonanywhere.com/api/pages
+    Published page: dev/chess24
+      Page: https://yourusername.pythonanywhere.com/pages/acme/dev/chess24/
 ```
 
 ## uploading from the command line
