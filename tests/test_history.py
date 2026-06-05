@@ -36,7 +36,6 @@ def test_version_history_omits_versions_above_n(session, published_package):
         f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/",
         files={"file": (f"{name}.zip", make_zip(name, "v2"), "application/zip")},
         data={"summary": "v2 for as-of test"},
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
     )
     assert r.status_code in (200, 201)
 

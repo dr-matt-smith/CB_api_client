@@ -12,11 +12,7 @@ def test_alias_lifecycle(session, published_package):
     assert r.status_code == 200
 
     # PUT alias "stable" → v1
-    r = session.put(
-        f"{base}/aliases/stable/",
-        json={"version": 1},
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
-    )
+    r = session.put(f"{base}/aliases/stable/", json={"version": 1})
     assert r.status_code in (200, 201), r.text
 
     # GET aliases — should now include "stable"
@@ -28,10 +24,7 @@ def test_alias_lifecycle(session, published_package):
     assert by_name["stable"].get("version") == 1
 
     # DELETE alias
-    r = session.delete(
-        f"{base}/aliases/stable/",
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
-    )
+    r = session.delete(f"{base}/aliases/stable/")
     assert r.status_code in (200, 204), r.text
 
     # GET aliases — "stable" should be gone

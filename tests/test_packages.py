@@ -12,14 +12,9 @@ def test_list_packages(session):
 
 def test_register_show_delete(session, fresh_package_name):
     name = fresh_package_name
-    csrf = session.cookies.get("csrftoken")
 
     # POST /api/packages/  → register
-    r = session.post(
-        f"{BASE_URL}/api/packages/",
-        json={"name": name, "type": "mod"},
-        headers={"X-CSRFToken": csrf},
-    )
+    r = session.post(f"{BASE_URL}/api/packages/", json={"name": name})
     assert r.status_code == 201, r.text
 
     # GET /api/packages/{name}/  → metadata
@@ -32,34 +27,21 @@ def test_register_show_delete(session, fresh_package_name):
     r = session.delete(
         f"{BASE_URL}/api/packages/{quote(name, safe='')}/",
         json={"reason": "test cleanup"},
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
     )
     assert r.status_code in (200, 204), r.text
 
 
 def test_register_duplicate_returns_409(session, fresh_package_name):
     name = fresh_package_name
-    csrf = session.cookies.get("csrftoken")
 
-    r = session.post(
-        f"{BASE_URL}/api/packages/",
-        json={"name": name, "type": "mod"},
-        headers={"X-CSRFToken": csrf},
-    )
+    r = session.post(f"{BASE_URL}/api/packages/", json={"name": name})
     assert r.status_code == 201
 
-    r = session.post(
-        f"{BASE_URL}/api/packages/",
-        json={"name": name, "type": "mod"},
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
-    )
+    r = session.post(f"{BASE_URL}/api/packages/", json={"name": name})
     assert r.status_code == 409
 
     # Cleanup
-    session.delete(
-        f"{BASE_URL}/api/packages/{quote(name, safe='')}/",
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
-    )
+    session.delete(f"{BASE_URL}/api/packages/{quote(name, safe='')}/")
 
 
 def test_show_unknown_package_404(session):

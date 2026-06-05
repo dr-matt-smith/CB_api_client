@@ -75,3 +75,38 @@ new version-scoped history endpoint.
   - **History**: full chronology / as-of-version (new)
   - **Convenience**: download latest version
 
+
+Client Version 2 (targets server API v7)
+=========================================
+Major update to talk to the **v7** ("digital sovereignty" / per-organisation
+isolation) server. See `version 2 design document.md` and
+`version 2 implementation plan.md` in this folder for the full spec.
+
+- [x] **authentication rewritten** — API-key instead of admin login + CSRF
+  - `.env` now holds `BASE_URL` + `API_KEY` (`USERNAME`/`PASSWORD` removed)
+  - new shared `api.make_session()` sets `Authorization: Api-Key <key>` once and
+    installs a 401 hint hook; `menu.py` `connect()` does a connectivity check
+  - all `X-CSRFToken` headers removed (not needed with API-key auth)
+
+- [x] **package type removed** (no more `mod`/`project`/`page`)
+  - register sends `{name}` only; list drops the **Type** column (adds **Vers** count);
+    detail drops type and now renders the embedded `aliases`
+  - `package.toml` `type` is ignored by the server (kept forward-compatible)
+
+- [x] **response shapes updated for v7**
+  - list item: nested full `latest_version` object + `versions_count` + `created_at`
+  - standardised on the `date` field (dropped the `uploaded_at` fallback)
+  - upload returns the full version object (no `public_url`); prints `content_hash`
+
+- [x] **new Pages / Publish sub-menu** (explicit web publishing)
+  - publish latest (`POST /api/publish/<name>`), unpublish (`DELETE`), status (`GET`),
+    history (`GET /api/publish/<name>/history`)
+  - serves the latest version's `public/` folder to `/pages/<org-slug>/<name>/`;
+    handles `422` (no `public/` folder) and `404` (not published)
+
+- [x] **legacy single-file upload removed**
+  - `upload.py` deleted (its `/api/upload/` endpoint no longer exists in v7)
+
+- [x] **tests updated** — fixtures use the API key (no login/CSRF), `type`/`public_url`
+  assertions dropped, new `test_publish.py` covering the publish lifecycle, 422, and 404
+

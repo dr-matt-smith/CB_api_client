@@ -40,7 +40,6 @@ def test_publish_second_version(session, published_package):
         f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/",
         files={"file": (f"{name}.zip", make_zip(name, "v2"), "application/zip")},
         data={"summary": "second publish"},
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
     )
     assert r.status_code in (200, 201), r.text
     assert r.json()["version"] == 2
@@ -53,7 +52,6 @@ def test_publish_implicit_register(session, fresh_package_name):
         f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/",
         files={"file": (f"{name}.zip", make_zip(name), "application/zip")},
         data={"summary": "implicit register"},
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
     )
     assert r.status_code in (200, 201), r.text
 
@@ -61,10 +59,7 @@ def test_publish_implicit_register(session, fresh_package_name):
     assert r.status_code == 200
 
     # Cleanup
-    session.delete(
-        f"{BASE_URL}/api/packages/{quote(name, safe='')}/",
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
-    )
+    session.delete(f"{BASE_URL}/api/packages/{quote(name, safe='')}/")
 
 
 def test_download_specific_version(session, published_package):
@@ -93,14 +88,12 @@ def test_tombstone_version_returns_410_on_download(session, published_package):
         f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/",
         files={"file": (f"{name}.zip", make_zip(name, "v2"), "application/zip")},
         data={"summary": "to be tombstoned"},
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
     )
     assert r.status_code in (200, 201)
 
     r = session.delete(
         f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/2/",
         json={"reason": "test"},
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
     )
     assert r.status_code in (200, 204), r.text
 

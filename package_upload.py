@@ -5,28 +5,8 @@ import sys
 import zipfile
 from urllib.parse import quote
 
-import certifi
-import requests
-
-from config import BASE_URL, PASSWORD, USERNAME
-
-
-def login():
-    session = requests.Session()
-    session.verify = certifi.where()
-    session.auth = (USERNAME, PASSWORD)
-    session.get(f"{BASE_URL}/admin/login/")
-    csrf_token = session.cookies.get("csrftoken")
-    response = session.post(f"{BASE_URL}/admin/login/", data={
-        "username": USERNAME,
-        "password": PASSWORD,
-        "csrfmiddlewaretoken": csrf_token,
-        "next": "/admin/",
-    })
-    if "Log in" in response.text:
-        print("Login failed. Check your credentials in config.py.")
-        sys.exit(1)
-    return session
+from config import BASE_URL
+from api import make_session
 
 
 def read_package_name(zip_path):
@@ -73,7 +53,6 @@ def upload_package(session, file_path, summary=None):
             url,
             files={"file": (filename, f, "application/zip")},
             data=data,
-            headers={"X-CSRFToken": session.cookies.get("csrftoken")},
         )
 
     if response.status_code in (200, 201):
@@ -84,20 +63,19 @@ def upload_package(session, file_path, summary=None):
             print(response.text)
             return
 
-        name = payload.get("package") or payload.get("name")
+        name = payload.get("package")
         version = payload.get("version")
         author = payload.get("author")
         download_url = payload.get("download_url")
-        public_url = payload.get("public_url")
+        content_hash = payload.get("content_hash")
 
         if name and version is not None:
             print(f"  {name} v{version}" + (f" (author: {author})" if author else ""))
         if download_url:
             full = download_url if download_url.startswith("http") else f"{BASE_URL}{download_url}"
             print(f"  Download: {full}")
-        if public_url:
-            full = public_url if public_url.startswith("http") else f"{BASE_URL}{public_url}"
-            print(f"  Public:   {full}")
+        if content_hash:
+            print(f"  Hash:     {content_hash}")
         if not (name or download_url):
             print(payload)
     else:
@@ -107,7 +85,7 @@ def upload_package(session, file_path, summary=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Upload a package ZIP to the v4 /api/packages/<name>/versions/ endpoint."
+        description="Upload a package ZIP to the /api/packages/<name>/versions/ endpoint."
     )
     parser.add_argument("file", help="Path to the package ZIP (must contain package.toml)")
     parser.add_argument(
@@ -121,7 +99,7 @@ def main():
         print(f"File not found: {args.file}")
         sys.exit(1)
 
-    session = login()
+    session = make_session()
     upload_package(session, args.file, summary=args.summary)
 
 
