@@ -3,7 +3,6 @@ import sys
 import uuid
 from urllib.parse import quote
 
-import certifi
 import pytest
 import requests
 
@@ -12,37 +11,24 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from config import BASE_URL, USERNAME, PASSWORD  # noqa: E402
+from config import BASE_URL  # noqa: E402
+from api import make_session  # noqa: E402
 
 from .helpers import make_zip  # noqa: E402
 
 
-def _csrf(session):
-    return session.cookies.get("csrftoken")
-
-
 @pytest.fixture(scope="session")
 def session():
-    s = requests.Session()
-    s.verify = certifi.where()
-    s.auth = (USERNAME, PASSWORD)
-
+    """Authenticated session using the v7 org API key (no admin login / CSRF)."""
+    s = make_session()
     try:
-        s.get(f"{BASE_URL}/admin/login/", timeout=5)
+        r = s.get(f"{BASE_URL}/api/packages", timeout=5)
     except requests.exceptions.RequestException as exc:
         pytest.skip(f"Server not reachable at {BASE_URL}: {exc}")
-
-    r = s.post(
-        f"{BASE_URL}/admin/login/",
-        data={
-            "username": USERNAME,
-            "password": PASSWORD,
-            "csrfmiddlewaretoken": _csrf(s),
-            "next": "/admin/",
-        },
-    )
-    if "Log in" in r.text:
-        pytest.skip("Login failed — check .env credentials")
+    if r.status_code == 401:
+        pytest.skip("API key rejected — check API_KEY in .env")
+    if r.status_code != 200:
+        pytest.skip(f"Unexpected status from /api/packages: {r.status_code}")
     return s
 
 
@@ -60,7 +46,6 @@ def published_package(session, fresh_package_name):
         f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/",
         files={"file": (f"{name}.zip", make_zip(name, "v1"), "application/zip")},
         data={"summary": "test fixture v1"},
-        headers={"X-CSRFToken": _csrf(session)},
     )
     assert r.status_code in (200, 201), f"fixture publish failed: {r.status_code} {r.text}"
 
@@ -71,7 +56,35 @@ def published_package(session, fresh_package_name):
         session.delete(
             f"{BASE_URL}/api/packages/{quote(name, safe='')}/",
             json={"reason": "test teardown"},
-            headers={"X-CSRFToken": _csrf(session)},
+        )
+    except requests.exceptions.RequestException:
+        pass
+
+
+@pytest.fixture
+def published_page_package(session, fresh_package_name):
+    """A package whose v1 contains a public/ folder (publishable). Cleaned up on teardown."""
+    name = fresh_package_name
+    r = session.post(
+        f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/",
+        files={
+            "file": (f"{name}.zip", make_zip(name, "v1", with_public=True), "application/zip")
+        },
+        data={"summary": "page fixture v1"},
+    )
+    assert r.status_code in (200, 201), f"fixture publish failed: {r.status_code} {r.text}"
+
+    yield name
+
+    # Best-effort: unpublish (ignore if not published) then cascade-delete.
+    try:
+        session.delete(f"{BASE_URL}/api/publish/{quote(name, safe='')}")
+    except requests.exceptions.RequestException:
+        pass
+    try:
+        session.delete(
+            f"{BASE_URL}/api/packages/{quote(name, safe='')}/",
+            json={"reason": "test teardown"},
         )
     except requests.exceptions.RequestException:
         pass

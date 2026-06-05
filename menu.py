@@ -1,11 +1,10 @@
 import re
-import requests
-import certifi
 import os
 import zipfile
 from datetime import datetime
 from urllib.parse import quote
-from config import BASE_URL, USERNAME, PASSWORD
+from config import BASE_URL
+from api import make_session
 
 UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "files_to_upload")
 DOWNLOADS_DIR = os.path.join(os.path.dirname(__file__), "downloads")
@@ -14,22 +13,18 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 
-def login():
-    session = requests.Session()
-    session.verify = certifi.where()
-    session.auth = (USERNAME, PASSWORD)
-    login_page = session.get(f"{BASE_URL}/admin/login/")
-    csrf_token = session.cookies.get("csrftoken")
-    response = session.post(f"{BASE_URL}/admin/login/", data={
-        "username": USERNAME,
-        "password": PASSWORD,
-        "csrfmiddlewaretoken": csrf_token,
-        "next": "/admin/",
-    })
-    if "Log in" in response.text:
-        print("Login failed. Check your credentials in config.py.")
+def connect():
+    """Build an API-key session and confirm the key reaches the server."""
+    session = make_session()
+    url = f"{BASE_URL}/api/packages"
+    response = session.get(url)
+    if response.status_code == 401:
+        # The hook already printed the hint; stop here.
         exit(1)
-    print(f"Logged in as '{USERNAME}'.\n")
+    if response.status_code != 200:
+        print(f"Could not reach the API ({response.status_code}): {response.text}")
+        exit(1)
+    print(f"Connected to {BASE_URL} with API key.\n")
     return session
 
 
@@ -52,16 +47,16 @@ def list_packages(session):
     if not packages:
         print("No packages found.")
         return
-    print(f"\n{'Name':<30} {'Type':<10} {'Latest':>7}  {'Author':<20} Uploaded")
+    print(f"\n{'Name':<30} {'Latest':>7} {'Vers':>5}  {'Author':<20} Uploaded")
     print("-" * 90)
     for p in packages:
         name = p.get("name", "?")
-        ptype = p.get("type") or p.get("package_type") or ""
         latest = p.get("latest_version") or {}
-        version = latest.get("version", "") if isinstance(latest, dict) else latest
+        version = latest.get("version", "") if isinstance(latest, dict) else ""
         author = latest.get("author", "") if isinstance(latest, dict) else ""
         uploaded = (latest.get("date") or "")[:19].replace("T", " ") if isinstance(latest, dict) else ""
-        print(f"{name:<30} {ptype:<10} {str(version):>7}  {author:<20} {uploaded}")
+        count = p.get("versions_count", "")
+        print(f"{name:<30} {str(version):>7} {str(count):>5}  {author:<20} {uploaded}")
     print()
 
 
@@ -108,23 +103,31 @@ def show_package_detail(session):
         return
 
     print(f"\nPackage: {data.get('name', name)}")
-    if data.get("type"):
-        print(f"Type:    {data['type']}")
+    created = (data.get("created_at") or "")[:19].replace("T", " ")
+    if created:
+        print(f"Created: {created}")
     versions = data.get("versions", [])
     if not versions:
         print("(no versions)")
-        return
-    print(f"\n{'Ver':>4}  {'Author':<20} {'Uploaded':<22} {'Tomb':<5} Summary")
-    print("-" * 90)
-    for v in versions:
-        ver = v.get("version", "?")
-        author = v.get("author", "")
-        uploaded = (v.get("date") or v.get("uploaded_at") or "")[:19].replace("T", " ")
-        tomb = "yes" if v.get("tombstoned") else ""
-        summary = (v.get("summary") or "").replace("\n", " ")
-        if len(summary) > 40:
-            summary = summary[:37] + "..."
-        print(f"{str(ver):>4}  {author:<20} {uploaded:<22} {tomb:<5} {summary}")
+    else:
+        print(f"\n{'Ver':>4}  {'Author':<20} {'Uploaded':<22} {'Tomb':<5} Summary")
+        print("-" * 90)
+        for v in versions:
+            ver = v.get("version", "?")
+            author = v.get("author", "")
+            uploaded = (v.get("date") or "")[:19].replace("T", " ")
+            tomb = "yes" if v.get("tombstoned") else ""
+            summary = (v.get("summary") or "").replace("\n", " ")
+            if len(summary) > 40:
+                summary = summary[:37] + "..."
+            print(f"{str(ver):>4}  {author:<20} {uploaded:<22} {tomb:<5} {summary}")
+
+    aliases = data.get("aliases", [])
+    if aliases:
+        print(f"\n{'Alias':<20} {'Version':>7}")
+        print("-" * 30)
+        for a in aliases:
+            print(f"{a.get('name', '?'):<20} {str(a.get('version', '')):>7}")
     print()
 
 
@@ -187,7 +190,7 @@ def list_package_versions(session):
     for v in versions:
         ver = v.get("version", "?")
         author = v.get("author", "")
-        uploaded = (v.get("date") or v.get("uploaded_at") or "")[:19].replace("T", " ")
+        uploaded = (v.get("date") or "")[:19].replace("T", " ")
         tomb = "yes" if v.get("tombstoned") else ""
         summary = (v.get("summary") or "").replace("\n", " ")
         if len(summary) > 40:
@@ -225,9 +228,14 @@ def show_version_detail(session):
     print(f"Package:    {name}")
     print(f"Version:    {v.get('version', '?')}")
     print(f"Author:     {v.get('author', '')}")
-    uploaded = (v.get("date") or v.get("uploaded_at") or "")[:19].replace("T", " ")
+    uploaded = (v.get("date") or "")[:19].replace("T", " ")
     print(f"Uploaded:   {uploaded}")
     print(f"Tombstoned: {'yes' if v.get('tombstoned') else 'no'}")
+    if v.get("content_hash"):
+        print(f"Hash:       {v['content_hash']}")
+    forked = v.get("forked_from")
+    if forked:
+        print(f"Forked from: {forked.get('package')} v{forked.get('version')}")
     if v.get("summary"):
         print(f"Summary:    {v['summary']}")
     if v.get("description"):
@@ -384,7 +392,6 @@ def upload_package(session):
             url,
             files={"file": (filename, f, "application/zip")},
             data=data,
-            headers={"X-CSRFToken": session.cookies.get("csrftoken")},
         )
 
     if response.status_code in (200, 201):
@@ -393,17 +400,16 @@ def upload_package(session):
         except ValueError:
             print(response.text)
             return
-        name = payload.get("package") or payload.get("name", "?")
+        name = payload.get("package", "?")
         version = payload.get("version", "?")
-        print(f"Uploaded: {name} v{version}")
+        author = payload.get("author", "")
+        print(f"Uploaded: {name} v{version}" + (f" (author: {author})" if author else ""))
         download_url = payload.get("download_url")
-        public_url = payload.get("public_url")
         if download_url:
             full = download_url if download_url.startswith("http") else f"{BASE_URL}{download_url}"
             print(f"  Download: {full}")
-        if public_url:
-            full = public_url if public_url.startswith("http") else f"{BASE_URL}{public_url}"
-            print(f"  Public:   {full}")
+        if payload.get("content_hash"):
+            print(f"  Hash:     {payload['content_hash']}")
     else:
         print(f"Upload failed ({response.status_code}): {response.text}")
 
@@ -426,7 +432,6 @@ def delete_package(session):
     response = session.delete(
         url,
         json={"reason": reason} if reason else {},
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
     )
     if response.status_code in (200, 204):
         print(f"Deleted package: {name}")
@@ -481,7 +486,6 @@ def set_alias(session):
     response = session.put(
         url,
         json={"version": version},
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
     )
     if response.status_code in (200, 201):
         print(f"Alias '{alias}' -> {name} v{version}")
@@ -499,10 +503,7 @@ def delete_alias(session):
 
     url = f"{BASE_URL}/api/packages/{quote(name, safe='')}/aliases/{quote(alias, safe='')}/"
     print(f"  DELETE {url}")
-    response = session.delete(
-        url,
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
-    )
+    response = session.delete(url)
     if response.status_code in (200, 204):
         print(f"Removed alias '{alias}' from {name}.")
     else:
@@ -530,24 +531,146 @@ def aliases_menu(session):
             print("Invalid option, please try again.")
 
 
+def publish_page(session):
+    name = pick_package(session)
+    if not name:
+        return
+    url = f"{BASE_URL}/api/publish/{quote(name, safe='')}"
+    print(f"  POST {url}")
+    response = session.post(url)
+    if response.status_code == 200:
+        try:
+            data = response.json()
+        except ValueError:
+            print(response.text)
+            return
+        print(f"Published: {data.get('package', name)} v{data.get('version', '?')}")
+        page = data.get("url")
+        if page:
+            full = page if page.startswith("http") else f"{BASE_URL}{page}"
+            print(f"  Page: {full}")
+    elif response.status_code == 422:
+        print("Cannot publish: the latest version has no 'public/' folder.")
+    else:
+        print(f"Publish failed ({response.status_code}): {response.text}")
+
+
+def unpublish_page(session):
+    name = pick_package(session)
+    if not name:
+        return
+    confirm = input(
+        f"Unpublish '{name}'? This removes the served page files. (y/N): "
+    ).strip().lower()
+    if confirm != "y":
+        print("Cancelled.")
+        return
+    url = f"{BASE_URL}/api/publish/{quote(name, safe='')}"
+    print(f"  DELETE {url}")
+    response = session.delete(url)
+    if response.status_code in (200, 204):
+        print(f"Unpublished: {name}")
+    else:
+        print(f"Unpublish failed ({response.status_code}): {response.text}")
+
+
+def publish_status(session):
+    name = pick_package(session)
+    if not name:
+        return
+    url = f"{BASE_URL}/api/publish/{quote(name, safe='')}"
+    print(f"  GET {url}")
+    response = session.get(url)
+    if response.status_code == 404:
+        print(f"'{name}' is not currently published.")
+        return
+    if response.status_code != 200:
+        print(f"Failed ({response.status_code}): {response.text}")
+        return
+    try:
+        data = response.json()
+    except ValueError:
+        print(response.text)
+        return
+    published = (data.get("published_at") or "")[:19].replace("T", " ")
+    print(f"\nPackage:       {data.get('package', name)}")
+    print(f"Published ver: {data.get('version', '?')}")
+    print(f"Published at:  {published}")
+    page = data.get("url")
+    if page:
+        full = page if page.startswith("http") else f"{BASE_URL}{page}"
+        print(f"URL:           {full}")
+    print()
+
+
+def publish_history(session):
+    name = pick_package(session)
+    if not name:
+        return
+    url = f"{BASE_URL}/api/publish/{quote(name, safe='')}/history"
+    print(f"  GET {url}")
+    response = session.get(url)
+    if response.status_code != 200:
+        print(f"Failed ({response.status_code}): {response.text}")
+        return
+    try:
+        events = response.json()
+    except ValueError:
+        print(response.text)
+        return
+    if not events:
+        print("(no publication history)")
+        return
+    print(f"\n{'Action':<10} {'Ver':>4}  {'When':<22} {'Principal':<16} Reason")
+    print("-" * 90)
+    for e in events:
+        when = (e.get("at") or "")[:19].replace("T", " ")
+        reason = (e.get("reason") or "").replace("\n", " ")
+        print(
+            f"{e.get('action', '?'):<10} {str(e.get('version', '')):>4}  "
+            f"{when:<22} {str(e.get('principal', '')):<16} {reason}"
+        )
+    print()
+
+
+def pages_menu(session):
+    while True:
+        print("\n--- Pages / Publish ---")
+        print("  (publish serves the LATEST version's public/ folder to /pages/<org>/<name>/;")
+        print("   tombstoning the published version auto-unpublishes it)")
+        print("  1 - Publish latest version         (POST   /api/publish/{name})")
+        print("  2 - Unpublish a package            (DELETE /api/publish/{name})")
+        print("  3 - Show current publication       (GET    /api/publish/{name})")
+        print("  4 - Show publication history       (GET    /api/publish/{name}/history)")
+        print("  0 - Back")
+        choice = input("\nSelect option: ").strip()
+        if choice == "1":
+            publish_page(session)
+        elif choice == "2":
+            unpublish_page(session)
+        elif choice == "3":
+            publish_status(session)
+        elif choice == "4":
+            publish_history(session)
+        elif choice == "0":
+            return
+        else:
+            print("Invalid option, please try again.")
+
+
 def register_package(session):
     name = input("Package name: ").strip()
     if not name:
-        return
-    ptype = input("Type (mod / project / page): ").strip().lower()
-    if ptype not in ("mod", "project", "page"):
-        print("Type must be 'mod', 'project', or 'page'.")
         return
 
     url = f"{BASE_URL}/api/packages/"
     print(f"  POST {url}")
     response = session.post(
         url,
-        json={"name": name, "type": ptype},
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
+        json={"name": name},
     )
     if response.status_code == 201:
-        print(f"Registered: {name} (type: {ptype})")
+        print(f"Registered: {name}")
     elif response.status_code == 409:
         print(f"Package '{name}' already exists.")
     else:
@@ -580,7 +703,6 @@ def tombstone_version(session):
     response = session.delete(
         url,
         json={"reason": reason} if reason else {},
-        headers={"X-CSRFToken": session.cookies.get("csrftoken")},
     )
     if response.status_code in (200, 204):
         print(f"Tombstoned: {name} v{version}")
@@ -655,7 +777,7 @@ def history_menu(session):
 
 
 def main():
-    session = login()
+    session = connect()
 
     while True:
         print("\n=== Packages API ===")
@@ -663,8 +785,9 @@ def main():
         print("  2 - Versions    (list / detail / upload / download / tombstone)")
         print("  3 - Aliases     (list / set / remove)")
         print("  4 - History     (full / as-of-version)")
-        print("  5 - Download latest version        (GET  /api/packages/{name}/latest)")
-        print("  6 - Upload a package               (POST /api/packages/{name}/versions)")
+        print("  5 - Pages       (publish / unpublish / status / history)")
+        print("  6 - Download latest version        (GET  /api/packages/{name}/latest)")
+        print("  7 - Upload a package               (POST /api/packages/{name}/versions)")
         print("  0 - Exit")
         choice = input("\nSelect option: ").strip()
 
@@ -677,8 +800,10 @@ def main():
         elif choice == "4":
             history_menu(session)
         elif choice == "5":
-            download_package_latest(session)
+            pages_menu(session)
         elif choice == "6":
+            download_package_latest(session)
+        elif choice == "7":
             upload_package(session)
         elif choice == "0":
             print("Goodbye.")
