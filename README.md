@@ -1,5 +1,7 @@
 # celbridge-hub-api-client
 
+Repo: https://github.com/celbridge-org/celbridge-hub-api-client
+
 Client to connect to Celbridge-hub API for ZIPed package upload and download
 - (see **celbridge-hub** package API server: https://github.com/celbridge-org/celbridge-hub)
 
