@@ -5,24 +5,31 @@ Repo: https://github.com/celbridge-org/celbridge-hub-api-client
 Client to connect to Celbridge-hub API for ZIPed package upload and download
 - (see **celbridge-hub** package API server: https://github.com/celbridge-org/celbridge-hub)
 
-> **v4 client** — targets the **v8** server (pages decoupled from packages).
-> Authentication is via an **API key**; the old admin-login/password flow is gone.
-> Pages are now published as their own ZIP uploads, independent of packages
-> (see `TDDS/version 4 design document.md`).
+> **v5 client** — targets the **Celbridge Workshop API** server (v9 + v10 + v11).
+> Authentication is via a **Workshop Key** (`cel_…`); the old admin-login/password
+> flow is gone. Pages are published as their own ZIP uploads, independent of
+> packages (see `TDDS/version 5 design document.md`).
 
 ## setup - create `.env`
 
-Create a `.env` with the server URL and your organisation **API key**:
+Create a `.env` with the server URL and your organisation **Workshop Key**:
 
 ```
 BASE_URL=https://yourusername.pythonanywhere.com
-API_KEY=kpf_xxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+API_KEY=cel_xxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-The API key is issued **once** by your organisation admin (it is stored only as a
-salted hash on the server, so it cannot be recovered later — keep it safe). Every
-request the client makes sends `Authorization: Api-Key <key>`; there is no separate
-login step. See `.env.example` for a template.
+The Workshop Key is issued **once** by your organisation admin (it is stored only
+as a salted hash on the server, so it cannot be recovered later — keep it safe).
+Every request the client makes sends `Authorization: Api-Key <key>`; there is no
+separate login step. Keys start with the `cel_` marker — older `kpf_` keys are
+rejected by the v11 server and must be re-issued. See `.env.example` for a template.
+
+Optionally set `AUTHOR=yourname` in `.env` to record yourself as the publisher of
+packages and pages you upload (otherwise an org service key publishes as `service`).
+
+On startup the client calls `GET /api/whoami` to confirm the key and report which
+workshop it binds to, so a rejected key is distinguishable from an unreachable host.
 
 ## CLI menu script
 
@@ -38,7 +45,7 @@ To upload, use the menu's **Upload** option or `package_upload.py`.
 ```bash
     % python menu.py
 
-    Connected to https://yourusername.pythonanywhere.com with API key.
+    Connected to Workshop Acme (acme) at https://yourusername.pythonanywhere.com.
 
     === Packages API ===
       1 - Packages    (list / show / register / delete)
@@ -81,7 +88,7 @@ To upload, use the menu's **Upload** option or `package_upload.py`.
     Package: fred-chess
     Created: 2026-05-09 14:11:38
 
-     Ver  Author               Uploaded               Tomb  Summary
+     Ver  Author               Uploaded               Del   Summary
     ------------------------------------------------------------------------------------------
        2  popeye               2026-05-09 14:19:01          added feature - should become version 2
        1  mattilda             2026-05-09 14:11:38          forked to create new package fred-chess
@@ -93,8 +100,9 @@ To upload, use the menu's **Upload** option or `package_upload.py`.
 
 ### example: publishing a web page
 
-In **v8** pages are independent of packages. A page is its own ZIP upload whose
-root is the served site, plus a `pages.toml` manifest naming the publish path:
+Pages are independent of packages. A page is its own ZIP upload whose root is the
+served site, plus a `page.toml` manifest naming the publish path (the plural
+`pages.toml` is still accepted):
 
 ```toml
 [publish]
@@ -110,7 +118,7 @@ Re-uploading the same path replaces it; uploading, tombstoning, or deleting a
 
     --- Pages ---
       (pages are independent of packages: each page is its own ZIP upload
-       containing a pages.toml with [publish].path; served at /pages/<org>/<path>/)
+       containing a page.toml with [publish].path; served at /pages/<org>/<path>/)
       1 - Publish a page (upload ZIP)    (POST   /api/pages)
       2 - List published pages          (GET    /api/pages)
       3 - Show page detail              (GET    /api/pages/{path})

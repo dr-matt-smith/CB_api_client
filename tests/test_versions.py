@@ -80,14 +80,14 @@ def test_download_latest(session, published_package):
     assert "package.toml" in z.namelist()
 
 
-def test_tombstone_version_returns_410_on_download(session, published_package):
+def test_delete_version_marks_deleted_and_returns_410(session, published_package):
     name = published_package
 
-    # Publish v2 so we can tombstone it (don't kill the only version)
+    # Publish v2 so we can delete it (don't kill the only version)
     r = session.post(
         f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/",
         files={"file": (f"{name}.zip", make_zip(name, "v2"), "application/zip")},
-        data={"summary": "to be tombstoned"},
+        data={"summary": "to be deleted"},
     )
     assert r.status_code in (200, 201)
 
@@ -97,7 +97,12 @@ def test_tombstone_version_returns_410_on_download(session, published_package):
     )
     assert r.status_code in (200, 204), r.text
 
-    # Subsequent download of v2 should be 410 Gone
+    # v9: the version detail now reports `deleted` (was `tombstoned`).
+    r = session.get(f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/2/")
+    assert r.status_code == 200, r.text
+    assert r.json().get("deleted") is True
+
+    # Subsequent download of v2 should be 410 Gone.
     r = session.get(
         f"{BASE_URL}/api/packages/{quote(name, safe='')}/versions/2/download/"
     )

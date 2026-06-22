@@ -5,7 +5,7 @@ import sys
 import zipfile
 from urllib.parse import quote
 
-from config import BASE_URL
+from config import BASE_URL, AUTHOR
 from api import make_session
 
 
@@ -47,6 +47,8 @@ def upload_package(session, file_path, summary=None):
     data = {}
     if summary:
         data["summary"] = summary
+    if AUTHOR:
+        data["author"] = AUTHOR
 
     with open(file_path, "rb") as f:
         response = session.post(

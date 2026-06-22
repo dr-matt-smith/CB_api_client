@@ -19,16 +19,16 @@ from .helpers import make_zip, make_page_zip  # noqa: E402
 
 @pytest.fixture(scope="session")
 def session():
-    """Authenticated session using the v7 org API key (no admin login / CSRF)."""
+    """Authenticated session using the org Workshop Key (no admin login / CSRF)."""
     s = make_session()
     try:
-        r = s.get(f"{BASE_URL}/api/packages", timeout=5)
+        r = s.get(f"{BASE_URL}/api/whoami", timeout=5)
     except requests.exceptions.RequestException as exc:
         pytest.skip(f"Server not reachable at {BASE_URL}: {exc}")
     if r.status_code == 401:
-        pytest.skip("API key rejected — check API_KEY in .env")
+        pytest.skip("Workshop Key rejected — check API_KEY in .env (v11 keys start with cel_)")
     if r.status_code != 200:
-        pytest.skip(f"Unexpected status from /api/packages: {r.status_code}")
+        pytest.skip(f"Unexpected status from /api/whoami: {r.status_code}")
     return s
 
 

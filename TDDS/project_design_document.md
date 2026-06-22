@@ -144,3 +144,39 @@ this is a **pages-only** update. See `version 4 design document.md` and
 - [x] **unchanged** — API-key auth (`api.py`, `config.py`) and the package upload
   path (`package_upload.py`) carry over from v2 untouched
 
+
+Client Version 5 (targets server API v9 + v10 + v11)
+=====================================================
+Update to talk to the rebranded **Celbridge Workshop API** server, which shipped
+three contract-alignment versions in a row. This is a single client release
+(**v4 → v5**) covering all three. See `version 5 design document.md` and
+`version 5 implementation plan.md` for the full spec.
+
+- [x] **Workshop Key cutover (v11)** — keys now start with `cel_`; the server
+  rejects old `kpf_` keys outright (no compatibility window)
+  - `config.py` / `api.py` comments and the 401 hint mention the `cel_` marker
+  - `api.py` warns at startup if `API_KEY` still begins with `kpf_`
+  - the key in `.env` must be re-issued as `cel_…` when the v11 server deploys
+
+- [x] **version read-back renames (v9)** — `tombstoned` → `deleted`,
+  `tombstone_reason` → `delete_reason`, `forked_from` → `base`
+  - `show_package_detail` / `list_package_versions` relabel the `Tomb` column
+    to `Del` and read `deleted`
+  - `show_version_detail` reads `deleted` / `delete_reason` and prints
+    `Base: name@version` (or `none`); the 410 download wording softened to "deleted"
+  - `set_alias` / `delete_alias` refuse the reserved `latest` keyword client-side
+
+- [x] **publish form fields (v10)** — `author` and `path` sent as multipart form
+  fields on publish; page manifest reader accepts singular `page.toml` (preferred)
+  or plural `pages.toml`
+  - optional `AUTHOR` in `.env` is sent so publishes are attributed (not `service`)
+  - `package_upload.py` mirrors the `author` form field
+
+- [x] **identity + connection check (v11)** — `connect()` probes
+  `GET /api/whoami`, distinguishing a rejected key (401) from an unreachable host,
+  and prints which workshop the key binds to
+
+- [x] **tests updated** — `conftest` skip-guard uses `/api/whoami`; `make_page_zip`
+  emits singular `page.toml`; `test_versions` asserts `deleted` after delete; new
+  `test_whoami.py` (200 + `organisation`)
+
