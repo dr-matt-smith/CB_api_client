@@ -3,7 +3,7 @@ import os
 import zipfile
 from datetime import datetime
 from urllib.parse import quote
-from config import BASE_URL
+from config import BASE_URL, AUTHOR
 from api import make_session
 
 UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "files_to_upload")
@@ -14,9 +14,9 @@ os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 
 def connect():
-    """Build an API-key session and confirm the key reaches the server."""
+    """Build a Workshop-Key session and confirm the key reaches the server."""
     session = make_session()
-    url = f"{BASE_URL}/api/packages"
+    url = f"{BASE_URL}/api/whoami"
     response = session.get(url)
     if response.status_code == 401:
         # The hook already printed the hint; stop here.
@@ -24,7 +24,18 @@ def connect():
     if response.status_code != 200:
         print(f"Could not reach the API ({response.status_code}): {response.text}")
         exit(1)
-    print(f"Connected to {BASE_URL} with API key.\n")
+    try:
+        who = response.json()
+    except ValueError:
+        who = {}
+    org_name = who.get("organisation_name") or who.get("organisation") or "?"
+    org_slug = who.get("organisation", "")
+    author = who.get("author")
+    where = f"{org_name} ({org_slug})" if org_slug else org_name
+    print(f"Connected to Workshop {where} at {BASE_URL}.")
+    if author:
+        print(f"  Signed in as: {author}")
+    print()
     return session
 
 
@@ -110,17 +121,17 @@ def show_package_detail(session):
     if not versions:
         print("(no versions)")
     else:
-        print(f"\n{'Ver':>4}  {'Author':<20} {'Uploaded':<22} {'Tomb':<5} Summary")
+        print(f"\n{'Ver':>4}  {'Author':<20} {'Uploaded':<22} {'Del':<5} Summary")
         print("-" * 90)
         for v in versions:
             ver = v.get("version", "?")
             author = v.get("author", "")
             uploaded = (v.get("date") or "")[:19].replace("T", " ")
-            tomb = "yes" if v.get("tombstoned") else ""
+            deleted = "yes" if v.get("deleted") else ""
             summary = (v.get("summary") or "").replace("\n", " ")
             if len(summary) > 40:
                 summary = summary[:37] + "..."
-            print(f"{str(ver):>4}  {author:<20} {uploaded:<22} {tomb:<5} {summary}")
+            print(f"{str(ver):>4}  {author:<20} {uploaded:<22} {deleted:<5} {summary}")
 
     aliases = data.get("aliases", [])
     if aliases:
@@ -185,17 +196,17 @@ def list_package_versions(session):
     if not versions:
         print("(no versions)")
         return
-    print(f"\n{'Ver':>4}  {'Author':<20} {'Uploaded':<22} {'Tomb':<5} Summary")
+    print(f"\n{'Ver':>4}  {'Author':<20} {'Uploaded':<22} {'Del':<5} Summary")
     print("-" * 90)
     for v in versions:
         ver = v.get("version", "?")
         author = v.get("author", "")
         uploaded = (v.get("date") or "")[:19].replace("T", " ")
-        tomb = "yes" if v.get("tombstoned") else ""
+        deleted = "yes" if v.get("deleted") else ""
         summary = (v.get("summary") or "").replace("\n", " ")
         if len(summary) > 40:
             summary = summary[:37] + "..."
-        print(f"{str(ver):>4}  {author:<20} {uploaded:<22} {tomb:<5} {summary}")
+        print(f"{str(ver):>4}  {author:<20} {uploaded:<22} {deleted:<5} {summary}")
     print()
 
 
@@ -230,12 +241,16 @@ def show_version_detail(session):
     print(f"Author:     {v.get('author', '')}")
     uploaded = (v.get("date") or "")[:19].replace("T", " ")
     print(f"Uploaded:   {uploaded}")
-    print(f"Tombstoned: {'yes' if v.get('tombstoned') else 'no'}")
+    print(f"Deleted:    {'yes' if v.get('deleted') else 'no'}")
+    if v.get("delete_reason"):
+        print(f"Reason:     {v['delete_reason']}")
     if v.get("content_hash"):
         print(f"Hash:       {v['content_hash']}")
-    forked = v.get("forked_from")
-    if forked:
-        print(f"Forked from: {forked.get('package')} v{forked.get('version')}")
+    base = v.get("base")
+    if base:
+        print(f"Base:       {base.get('name')}@{base.get('version')}")
+    else:
+        print("Base:       none")
     if v.get("summary"):
         print(f"Summary:    {v['summary']}")
     if v.get("description"):
@@ -260,7 +275,7 @@ def download_package_version(session):
     print(f"  GET {url}")
     response = session.get(url)
     if response.status_code == 410:
-        print(f"Version is tombstoned (410 Gone): {response.text}")
+        print(f"Version is deleted (410 Gone): {response.text}")
         return
     if response.status_code != 200:
         print(f"Download failed ({response.status_code}): {response.text}")
@@ -394,7 +409,11 @@ def upload_package(session):
     filename = os.path.basename(file_path)
     url = f"{BASE_URL}/api/packages/{quote(pkg_name, safe='')}/versions/"
     print(f"  POST {url}")
-    data = {"summary": summary} if summary else {}
+    data = {}
+    if summary:
+        data["summary"] = summary
+    if AUTHOR:
+        data["author"] = AUTHOR
     with open(file_path, "rb") as f:
         response = session.post(
             url,
@@ -480,6 +499,9 @@ def set_alias(session):
     alias = input("Alias name (lowercase kebab-case, e.g. 'stable'): ").strip()
     if not alias:
         return
+    if alias.lower() == "latest":
+        print("'latest' is a reserved keyword (server-resolved) and cannot be set.")
+        return
     version_input = input("Point alias at version number: ").strip()
     if not version_input:
         return
@@ -507,6 +529,9 @@ def delete_alias(session):
         return
     alias = input("Alias name to remove: ").strip()
     if not alias:
+        return
+    if alias.lower() == "latest":
+        print("'latest' is a reserved keyword (server-resolved) and cannot be removed.")
         return
 
     url = f"{BASE_URL}/api/packages/{quote(name, safe='')}/aliases/{quote(alias, safe='')}/"
@@ -542,26 +567,30 @@ def aliases_menu(session):
 def _read_pages_toml(zip_path):
     """Return (publish_path, error_message). On success error_message is None.
 
-    Reads the ``[publish] path`` value from the top-level ``pages.toml`` in the
-    ZIP. The server validates this too, but reading it client-side gives a clear
-    up-front error and lets us show the path that will be published.
+    Reads the ``[publish] path`` value from the top-level page manifest in the
+    ZIP. The server now accepts the singular ``page.toml`` (preferred) or the
+    plural ``pages.toml``, so we look for either (case-insensitive). The server
+    validates this too, but reading it client-side gives a clear up-front error
+    and lets us show the path that will be published.
     """
+    manifest_names = ("page.toml", "pages.toml")
     try:
         with zipfile.ZipFile(zip_path) as zf:
             toml_name = next(
                 (n for n in zf.namelist()
-                 if n.lower() == "pages.toml" or n.lower().endswith("/pages.toml")),
+                 if n.lower() in manifest_names
+                 or any(n.lower().endswith(f"/{m}") for m in manifest_names)),
                 None,
             )
             if not toml_name:
-                return None, "Invalid page bundle: ZIP does not contain a 'pages.toml' file."
+                return None, "Invalid page bundle: ZIP does not contain a 'page.toml' file."
             text = zf.read(toml_name).decode("utf-8", errors="replace")
     except zipfile.BadZipFile:
         return None, f"Not a valid ZIP file: {zip_path}"
 
     match = re.search(r"^\s*path\s*=\s*['\"]([^'\"]+)['\"]", text, re.MULTILINE)
     if not match:
-        return None, "pages.toml is missing the [publish] path value."
+        return None, "page.toml is missing the [publish] path value."
     return match.group(1), None
 
 
@@ -633,10 +662,14 @@ def publish_page(session):
     filename = os.path.basename(file_path)
     url = f"{BASE_URL}/api/pages"
     print(f"  POST {url}")
+    data = {"path": publish_path}
+    if AUTHOR:
+        data["author"] = AUTHOR
     with open(file_path, "rb") as f:
         response = session.post(
             url,
             files={"file": (filename, f, "application/zip")},
+            data=data,
         )
 
     if response.status_code in (200, 201):
@@ -714,7 +747,7 @@ def pages_menu(session):
     while True:
         print("\n--- Pages ---")
         print("  (pages are independent of packages: each page is its own ZIP upload")
-        print("   containing a pages.toml with [publish].path; served at /pages/<org>/<path>/)")
+        print("   containing a page.toml with [publish].path; served at /pages/<org>/<path>/)")
         print("  1 - Publish a page (upload ZIP)    (POST   /api/pages)")
         print("  2 - List published pages          (GET    /api/pages)")
         print("  3 - Show page detail              (GET    /api/pages/{path})")
